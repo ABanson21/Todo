@@ -44,3 +44,4 @@
 /Users/dad/Desktop/dev/TodoBackend/bin/Debug/net8.0/Swashbuckle.AspNetCore.SwaggerUI.dll
 /Users/dad/Desktop/dev/TodoBackend/bin/Debug/net8.0/System.IdentityModel.Tokens.Jwt.dll
 /Users/dad/Desktop/dev/TodoBackend/bin/Debug/net8.0/BCrypt.Net-Next.dll
+/Users/dad/Desktop/dev/TodoBackend/obj/Debug/net8.0/TodoBackend.sourcelink.json

@@ -163,6 +163,7 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         
         foreach (var field in fieldInfoList)
         {
+            if (field.Name == "Email") continue;
             if (reader.IsDBNull(reader.GetOrdinal(field.Name))) continue;
             var value = reader[field.Name];
             field.SetValue(model, field.PropertyType switch

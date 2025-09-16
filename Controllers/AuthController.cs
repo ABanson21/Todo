@@ -28,9 +28,9 @@ public class AuthController(ILogger<AuthController> logger, UserService reposito
             return BadRequest("Invalid request.");
         }
         
-        var returnedCount = await repository.CheckUserExistence(request.Username);
+        var returnedUser = await repository.CheckUserExistence(request.Username);
         
-        if(returnedCount > 0)
+        if(returnedUser != null)
             return BadRequest("Username exists with another account. Please choose another username or login.");
         
         var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
@@ -62,16 +62,16 @@ public class AuthController(ILogger<AuthController> logger, UserService reposito
             return BadRequest("Username and password must be provided.");
         }
         
-        var returnedUser = await repository.UserLogin(request.Username, request.Password);
+        var returnedUser = await repository.CheckUserExistence(request.Username);
 
         if (returnedUser == null)
         {
-            return Unauthorized("Invalid Credentials");
+            return Unauthorized("No user exists for that username and password combination. Please try again.");
         }
         
         // Verify password using BCrypt
         if (!BCrypt.Net.BCrypt.Verify(request.Password, returnedUser.PasswordHash))
-            return Unauthorized("Invalid credentials");
+            return Unauthorized("Invalid credentials. Please check your username and password.");
         
         var claimsList = new[]
         {
@@ -91,7 +91,6 @@ public class AuthController(ILogger<AuthController> logger, UserService reposito
             signingCredentials: credentials);
         
         var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
-        
         return Ok(tokenString);
     }
     

@@ -12,6 +12,6 @@ public class User
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string Role { get; set; }
-    public string Email =>  UserName;
+    public string Email => UserName;
 
 }
