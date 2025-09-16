@@ -1,0 +1,21 @@
+@TodoBackend_HostAddress = http://localhost:5075
+
+GET {{TodoBackend_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
+
+### Login
+
+
+POST {{TodoBackend_HostAddress}}/v1/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "password"
+}
+
+### Protected resource (replace <token>)
+GET https://localhost:5001/api/secure/secret
+Authorization: Bearer <token>
