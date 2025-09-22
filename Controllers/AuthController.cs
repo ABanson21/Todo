@@ -1,97 +1,158 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
+using System.Security.Claims; 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
-using Microsoft.IdentityModel.Tokens;
 using TodoBackend.Configurations;
 using TodoBackend.Model;
 using TodoBackend.Model.Auth;
-using TodoBackend.Services;
+using TodoBackend.Repository;
 
 namespace TodoBackend.Controllers;
 
 [Route("v1/api/[controller]")]
-public class AuthController(ILogger<AuthController> logger, UserService repository, IOptions<JwtOptions> jwtOptions) : ControllerBase
+public class AuthController(ILogger<AuthController> logger, AuthRepository authRepository, IOptions<JwtOptions> jwtOptions) : ControllerBase
 {
-    private readonly ILogger<AuthController> _logger = logger;
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
-    
     
     [HttpPost]
     [Route("register")]
     public async Task<IActionResult> Register([FromBody] RegisterRequest request)
     {
-        if (!ModelState.IsValid)
-        {
-            return BadRequest("Invalid request.");
-        }
-        
-        var returnedUser = await repository.CheckUserExistence(request.Username);
-        
-        if(returnedUser != null)
-            return BadRequest("Username exists with another account. Please choose another username or login.");
-        
-        var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password);
-
-        var newUser = new User
-        {
-            FirstName = request.FirstName,
-            LastName = request.LastName,
-            UserName = request.Username,
-            PasswordHash = passwordHash,
-            PhoneNumber = request.PhoneNumber,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
-            Role = "User",
-        };
-
-        await repository.Create(newUser);
-        
-        return Ok("User created successfully");
+        return await RegisterUser(request, "User");
     }
     
-
+    [Authorize(Roles = "Admin")]
+    [HttpPost("register-admin")]
+    public async Task<IActionResult> RegisterAdmin([FromBody] RegisterRequest request)
+    {
+        return await RegisterUser(request, "Admin");
+    }
+    
     [HttpPost]
     [Route("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
-        if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+        try
         {
-            return BadRequest("Username and password must be provided.");
+            if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Password))
+            {
+                return BadRequest("Username and password must be provided.");
+            }
+            
+            var result = await authRepository.LoginAsync(request, HttpContext.Connection.RemoteIpAddress?.ToString()!);
+            return Ok(new { accessToken = result.accessToken, refreshToken = result.refreshToken });
+
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "An error occurred during login. Exception: {Message}", ex.Message);
+            return StatusCode(500, "An internal server error occurred.");
+        }
+    }
+    
+    [HttpPost]
+    [Route("refresh")]
+    public async Task<IActionResult> RefreshToken([FromBody] RefreshRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.RefreshToken) || string.IsNullOrWhiteSpace(request.IpAddress))
+            {
+                return BadRequest("refreshToken and ipAddress must be provided.");
+            }
+            
+            var result = await authRepository.RefreshTokenAsync(request.RefreshToken, request.IpAddress);
+            return Ok(new { accessToken = result.accessToken, refreshToken = result.refreshToken });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "An error occurred during token refresh. Exception: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+    }
+    
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout([FromBody] RefreshRequest request)
+    {
+        try
+        {
+            var revokeSucceeded = await authRepository.RevokeTokenAsync(request.RefreshToken, request.IpAddress);
+            if (!revokeSucceeded)
+                return BadRequest("Token revocation failed. Token may be invalid or already revoked.");
+
+            return Ok("Logged out successfully");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "An error occurred during token revoke. Exception: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
+        }
+      
+    }
+
+    [HttpPost("logout-all")]
+    [Authorize] 
+    public async Task<IActionResult> LogoutAll()
+    {
+        try
+        {
+            var userContained = Int32.TryParse(User.FindFirstValue(nameof(TaskItem.UserId)), out var userId);
+
+            if (!userContained)
+            {
+                return BadRequest("UserId claim is missing or invalid.");
+            }
+        
+            var count = await authRepository.RevokeAllTokensAsync(userId);
+
+            return Ok($"{count} sessions revoked");
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "An error occurred during token revoke. Exception: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
         }
         
-        var returnedUser = await repository.CheckUserExistence(request.Username);
-
-        if (returnedUser == null)
+    }
+    
+    private async Task<IActionResult> RegisterUser(RegisterRequest request, string role)
+    {
+        if (!ModelState.IsValid)
         {
-            return Unauthorized("No user exists for that username and password combination. Please try again.");
+            return BadRequest("Invalid request.");
+        }
+
+        try
+        {
+            await authRepository.RegisterUserAsync(request, role);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "An error occurred during user registration. Exception: {Message}", ex.Message);
+            return StatusCode(500, ex.Message);
         }
         
-        // Verify password using BCrypt
-        if (!BCrypt.Net.BCrypt.Verify(request.Password, returnedUser.PasswordHash))
-            return Unauthorized("Invalid credentials. Please check your username and password.");
-        
-        var claimsList = new[]
-        {
-            new Claim(ClaimTypes.Name, request.Username),
-            new Claim(ClaimTypes.Role, returnedUser.Role)
-        };
-        
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtOptions.Key));
-        
-        var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var token = new JwtSecurityToken(
-            issuer: _jwtOptions.Issuer,
-            audience: _jwtOptions.Audience,
-            claims: claimsList,
-            expires: DateTime.Now.AddMinutes(30),
-            signingCredentials: credentials);
-        
-        var tokenString = new JwtSecurityTokenHandler().WriteToken(token);
-        return Ok(tokenString);
+        return Ok("User created successfully");
     }
     
 }

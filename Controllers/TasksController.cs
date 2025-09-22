@@ -1,11 +1,11 @@
 using Microsoft.AspNetCore.Mvc;
 using TodoBackend.Model;
-using TodoBackend.Services;
+using TodoBackend.Repository;
 
 namespace TodoBackend.Controllers;
 
 [Route("v1/api/[controller]")]
-public class TasksController(TaskService repository, ILogger<TasksController> logger): ControllerBase
+public class TasksController(TaskRepository repository, ILogger<TasksController> logger): ControllerBase
 {
     [HttpGet]
     [Route("all")]
@@ -32,7 +32,7 @@ public class TasksController(TaskService repository, ILogger<TasksController> lo
     {
         if (!ModelState.IsValid) return BadRequest();
         task.IsCompleted = false;
-        task.ModifiedDate = DateTime.Now;
+        task.ModifiedDate = DateTime.UtcNow;
         await repository.Create(task);
         return Ok($"Task created successfully for user");
     }

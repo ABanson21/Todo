@@ -3,8 +3,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using TodoBackend.Configurations;
 using TodoBackend.Database;
-using TodoBackend.Model;
-using TodoBackend.Services;
+using TodoBackend.Repository;
 
 namespace TodoBackend;
 
@@ -17,8 +16,10 @@ public class Startup(IConfiguration configuration)
     {
         services.AddControllers();
         services.AddScoped(typeof(IDatabaseContext<>), typeof(DatabaseContext<>));
-        services.AddScoped<TaskService>();
-        services.AddScoped<UserService>();
+        services.AddScoped<TaskRepository>();
+        services.AddScoped<UserRepository>();
+        services.AddScoped<AuthRepository>();
+        services.AddScoped<TokenRepository>();
         services.Configure<DatabaseConfig>(Configuration.GetSection("DatabaseSettings"));
         services.Configure<JwtOptions>(Configuration.GetSection("Jwt"));
         var jwtOptions = Configuration.GetSection("Jwt").Get<JwtOptions>();

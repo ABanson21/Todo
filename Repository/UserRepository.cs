@@ -1,9 +1,9 @@
 using TodoBackend.Database;
 using TodoBackend.Model;
 
-namespace TodoBackend.Services;
+namespace TodoBackend.Repository;
 
-public class UserService(IDatabaseContext<User> dbContext) : BaseRepository<User>(dbContext)
+public class UserRepository(IDatabaseContext<User> dbContext) : BaseRepository<User>(dbContext)
 {
     public async Task<User> CheckUserExistence(string username)
     {

@@ -14,7 +14,7 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
                                                           + ";User=" + databaseConfigs.Value.User
                                                           + ";Password=" + databaseConfigs.Value.Password + ";";
 
-    public async Task ExecuteAction(string query, Dictionary<string, object>? parameters = null)
+    public async Task<int> ExecuteAction(string query, Dictionary<string, object>? parameters = null)
     {
         var connection = new MySqlConnection(_connectionString);
         var mySqlCommand = new MySqlCommand();
@@ -31,17 +31,17 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
                     mySqlCommand.Parameters.AddWithValue(param.Key, param.Value);
                 }
             }
-            mySqlCommand.ExecuteNonQuery();
-            Console.WriteLine("Action On Database Executed Successfully");
+            return mySqlCommand.ExecuteNonQuery();
         }
         catch (Exception ex)
         {
             Console.WriteLine(ex.ToString());
+            throw;
         }
         finally
         {
             await connection.CloseAsync();
-            Console.WriteLine("Connection Closed");
+            Console.WriteLine("Database Connection Closed");
         }
     }
     
@@ -52,7 +52,7 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         var mySqlCommand = new MySqlCommand();
         try
         {
-            Console.WriteLine("Connecting to MySQL...");
+            Console.WriteLine("Opening database connection...");
             await connection.OpenAsync();
             mySqlCommand.Connection = connection;
             mySqlCommand.CommandText = query;
@@ -73,11 +73,12 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         catch (Exception ex)
         {
             Debug.WriteLine(ex.ToString());
+            throw;
         }
         finally
         {
             await connection.CloseAsync();
-            Console.WriteLine("Connection Closed");
+            Console.WriteLine("Database Connection Closed");
         }
         return models;
     }
@@ -88,7 +89,7 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         var mySqlCommand = new MySqlCommand();
         try
         {
-            Console.WriteLine("Connecting to MySQL...");
+            Console.WriteLine("Opening database connection...");
             await connection.OpenAsync();
             mySqlCommand.Connection = connection;
             mySqlCommand.CommandText = query;
@@ -109,11 +110,12 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         catch (Exception ex)
         {
             Debug.WriteLine(ex.ToString());
+            throw;
         }
         finally
         {
             await connection.CloseAsync();
-            Console.WriteLine("Connection Closed");
+            Console.WriteLine("Database Connection Closed");
         }
 
         return default!;
@@ -125,7 +127,7 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         var mySqlCommand = new MySqlCommand();
         try
         {
-            Console.WriteLine("Connecting to MySQL...");
+            Console.WriteLine("Opening database connection...");
             await connection.OpenAsync();
             mySqlCommand.Connection = connection;
             mySqlCommand.CommandText = query;
@@ -145,32 +147,77 @@ public class DatabaseContext<T>(IOptions<DatabaseConfig> databaseConfigs) : IDat
         catch (Exception ex)
         {
             Debug.WriteLine(ex.ToString());
+            throw;
         }
         finally
         {
             await connection.CloseAsync();
-            Console.WriteLine("Connection Closed");
+            Console.WriteLine("Database Connection Closed");
         }
 
         return default!;
     }
 
+    public async Task<TResult> ExecuteTransactions<TResult>(Func<MySqlCommand, Task<TResult>> action, Dictionary<string, object>? parameters = null)
+    {
+        MySqlTransaction transaction = null!;
+        var connection = new MySqlConnection(_connectionString);
+       
+        try
+        {
+            await connection.OpenAsync();
+            transaction = await connection.BeginTransactionAsync();
+            Console.WriteLine("Beginning database transaction...");
+            var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            var result = await action(command);
+            await transaction.CommitAsync();
+            Console.WriteLine("Transaction committed");
+            return result;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync();
+            Debug.WriteLine(ex.ToString());
+            throw;
+        }
+        finally
+        {
+            await connection.CloseAsync();
+            Console.WriteLine("Database Transaction Connection Closed");
+        }
+    }
     
+    // Convenience overload when you don't need to return a value.
+    public async Task ExecuteInTransactionAsync(Func<MySqlCommand, Task> action)
+    {
+        await ExecuteTransactions<object?>(async cmd =>
+        {
+            await action(cmd);
+            return null;
+        });
+    }
+
+
     private T GetModelFromReader<T>(MySqlDataReader reader) where T : new()
     {
         var model = new T();
         var fieldInfoList = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+        var settableProperties = fieldInfoList.Where(p => p.CanWrite).ToList();
         
         foreach (var field in fieldInfoList)
         {
-            if (field.Name == "Email") continue;
+            if (!field.CanWrite)
+            {
+                continue;
+            }
             if (reader.IsDBNull(reader.GetOrdinal(field.Name))) continue;
             var value = reader[field.Name];
             field.SetValue(model, field.PropertyType switch
             {
                 var t when t == typeof(string) => value.ToString(),
                 var t when t == typeof(int) => Convert.ToInt32(value),
-                var t when t == typeof(DateTime) => Convert.ToDateTime(value),
+                var t when t == typeof(DateTime) || t == typeof(DateTime?) => Convert.ToDateTime(value),
                 var t when t == typeof(bool) => Convert.ToBoolean(value),
                 var t => Convert.ChangeType(value, t)
             } );

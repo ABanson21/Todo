@@ -1,4 +1,3 @@
-using System;
 namespace TodoBackend;
 
 public static class Program

@@ -1,12 +1,12 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using TodoBackend.Services;
+using TodoBackend.Repository;
 
 namespace TodoBackend.Controllers;
 
 [Route("v1/api/[controller]")]
-public class UserController(UserService repository, ILogger<TasksController> logger): ControllerBase
+public class UserController(UserRepository repository, ILogger<TasksController> logger): ControllerBase
 {
     [Authorize()]
     [HttpGet("me")]
