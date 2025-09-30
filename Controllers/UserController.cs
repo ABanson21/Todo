@@ -8,7 +8,6 @@ namespace TodoBackend.Controllers;
 [Route("v1/api/[controller]")]
 public class UserController(UserRepository repository, ILogger<TasksController> logger): ControllerBase
 {
-    [Authorize()]
     [HttpGet("me")]
     public async Task<IActionResult> GetCurrentUser()
     { 
@@ -18,7 +17,6 @@ public class UserController(UserRepository repository, ILogger<TasksController> 
         return Ok(new { Username = username, Role = role });
     }
     
-    [Authorize(Roles = "Admin")]
     [HttpGet("admin")]
     public async Task<IActionResult> GetAdminData()
     { 

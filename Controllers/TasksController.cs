@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using TodoBackend.Model;
 using TodoBackend.Repository;
@@ -8,6 +9,7 @@ namespace TodoBackend.Controllers;
 public class TasksController(TaskRepository repository, ILogger<TasksController> logger): ControllerBase
 {
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     [Route("all")]
     public async Task<IActionResult> GetAllTasks()
     {
@@ -18,8 +20,10 @@ public class TasksController(TaskRepository repository, ILogger<TasksController>
 
     [HttpGet]
     [Route("getUserTasks/")]
-    public async Task<IActionResult> GetTasksForUser([FromBody] string userId)
+    [Authorize]
+    public async Task<IActionResult> GetTasksForUser()
     {
+        var userId = User.FindFirst(c => c.Type == "UserId")?.Value;
         logger.LogInformation("Getting tasks for user: {userId}", userId);
         if (string.IsNullOrEmpty(userId)) return BadRequest();
         var resultTasks = await repository.GetTasksForUsers(userId);
@@ -28,12 +32,53 @@ public class TasksController(TaskRepository repository, ILogger<TasksController>
 
     [HttpPut]
     [Route("addTask")]
+    [Authorize(Policy = AppConstants.CanEditOwnProfile)]
     public async Task<IActionResult> AddTask([FromBody] TaskItem task)
     {
-        if (!ModelState.IsValid) return BadRequest();
-        task.IsCompleted = false;
-        task.ModifiedDate = DateTime.UtcNow;
-        await repository.Create(task);
-        return Ok($"Task created successfully for user");
+        if (!ModelState.IsValid)
+        {
+            return BadRequest("Invalid task data");
+        }
+
+        try
+        {
+            task.IsCompleted = false;
+            task.ModifiedDate = DateTime.UtcNow;
+            await repository.Create(task);
+            return Ok($"Task created successfully for user");
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500,ex.Message);
+        }
     }
+    
+    
+    [HttpPut]
+    [Route("editTask")]
+    [Authorize(Policy = AppConstants.CanEditOwnProfile)]
+    public async Task<IActionResult> UpdateTask([FromBody] TaskItem task)
+    {
+        if (!ModelState.IsValid)
+        {
+            return BadRequest("Invalid task data");
+        }
+
+        try
+        {
+            task.ModifiedDate = DateTime.UtcNow;
+
+            await repository.Update(task);
+            return Ok($"Task updated successfully for user");
+
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500,ex.Message);
+        }
+ 
+    }
+    
+    
+    
 }

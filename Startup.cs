@@ -1,9 +1,11 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.IdentityModel.Tokens;
 using TodoBackend.Configurations;
 using TodoBackend.Database;
 using TodoBackend.Repository;
+using TodoBackend.Security;
 
 namespace TodoBackend;
 
@@ -39,7 +41,12 @@ public class Startup(IConfiguration configuration)
                 };
             });
         
-        services.AddAuthorization();
+        services.AddAuthorizationBuilder()
+            .AddPolicy(AppConstants.CanEditOwnProfile, policy => policy.Requirements.Add(new SameUserRequirement(AppConstants.UserId)));
+
+        
+        services.AddHttpContextAccessor();
+        services.AddSingleton<IAuthorizationHandler, ResourceOwnerHandler>();
         
         services.AddEndpointsApiExplorer();
         services.AddSwaggerGen();

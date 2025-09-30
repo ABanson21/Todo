@@ -98,8 +98,8 @@ public abstract class BaseRepository<T> where T : class, new()
         
         var parameters = properties.ToDictionary(p => "@" + p.Name, p => p.GetValue(item) ?? DBNull.Value);
 
-        await _dbContext.ExecuteAction(query, parameters);
-        
+         await _dbContext.ExecuteAction(query, parameters);
+         
         return item;
     }
     
@@ -117,6 +117,10 @@ public abstract class BaseRepository<T> where T : class, new()
         var idProperty = typeof(T).GetProperty("Id");
         if (idProperty != null)
         {
+            if ((int)idProperty.GetValue(item) < 1)
+            {
+                throw new ArgumentException("Item must have a valid Id for update.");
+            }
             parameters.Add("@Id", idProperty.GetValue(item) ?? DBNull.Value);
         }
 

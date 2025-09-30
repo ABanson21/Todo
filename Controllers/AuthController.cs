@@ -80,6 +80,7 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
     }
     
     [HttpPost("logout")]
+    [Authorize]
     public async Task<IActionResult> Logout([FromBody] RefreshRequest request)
     {
         try
@@ -88,11 +89,11 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
             if (!revokeSucceeded)
                 return BadRequest("Token revocation failed. Token may be invalid or already revoked.");
 
-            return Ok("Logged out successfully");
+            return Ok("Logged out.");
         }
         catch (InvalidOperationException ex)
         {
-            return Conflict(ex.Message);
+            return Ok("Logged out.");
         }
         catch (Exception ex)
         {
