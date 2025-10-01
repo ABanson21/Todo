@@ -1,6 +1,6 @@
 namespace TodoBackend;
 
-public static class Program
+public static class   Program
 {
     public static int Main(String[] args)
     {

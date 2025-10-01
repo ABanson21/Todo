@@ -1,6 +1,7 @@
 using System.Security.Claims; 
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Options;
 using TodoBackend.Configurations;
 using TodoBackend.Model;
@@ -29,6 +30,7 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
     }
     
     [HttpPost]
+    [EnableRateLimiting("LoginPolicy")]
     [Route("login")]
     public async Task<IActionResult> Login([FromBody] LoginRequest request)
     {
@@ -55,6 +57,7 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
     }
     
     [HttpPost]
+    [EnableRateLimiting("RefreshPolicy")]
     [Route("refresh")]
     public async Task<IActionResult> RefreshToken([FromBody] RefreshRequest request)
     {

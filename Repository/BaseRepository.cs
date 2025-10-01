@@ -13,7 +13,6 @@ public abstract class BaseRepository<T> where T : class, new()
         CreateTable().GetAwaiter().GetResult();
     }
     
-
     
     public async Task DropTable()
     {
