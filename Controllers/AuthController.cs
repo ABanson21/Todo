@@ -7,11 +7,12 @@ using TodoBackend.Configurations;
 using TodoBackend.Model;
 using TodoBackend.Model.Auth;
 using TodoBackend.Repository;
+using TodoBackend.Services;
 
 namespace TodoBackend.Controllers;
 
 [Route("v1/api/[controller]")]
-public class AuthController(ILogger<AuthController> logger, AuthRepository authRepository, IOptions<JwtOptions> jwtOptions) : ControllerBase
+public class AuthController(ILogger<AuthController> logger, AuthProvider authProvider, IOptions<JwtOptions> jwtOptions) : ControllerBase
 {
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
     
@@ -41,7 +42,7 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
                 return BadRequest("Username and password must be provided.");
             }
             
-            var result = await authRepository.LoginAsync(request, HttpContext.Connection.RemoteIpAddress?.ToString()!);
+            var result = await authProvider.LoginAsync(request, HttpContext.Connection.RemoteIpAddress?.ToString()!);
             return Ok(new { accessToken = result.accessToken, refreshToken = result.refreshToken });
 
         }
@@ -68,12 +69,16 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
                 return BadRequest("refreshToken and ipAddress must be provided.");
             }
             
-            var result = await authRepository.RefreshTokenAsync(request.RefreshToken, request.IpAddress);
+            var result = await authProvider.RefreshTokenAsync(request.RefreshToken, request.IpAddress);
             return Ok(new { accessToken = result.accessToken, refreshToken = result.refreshToken });
         }
         catch (UnauthorizedAccessException ex)
         {
             return Unauthorized(ex.Message);
+        }
+        catch (Exception ex) when (ex.Message.Contains("Already committed"))
+        {
+            return StatusCode(500, "Request Revoked. Please login on all devices again.");
         }
         catch (Exception ex)
         {
@@ -83,12 +88,12 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
     }
     
     [HttpPost("logout")]
-    [Authorize]
+    [Authorize(Roles = "User,Admin")]
     public async Task<IActionResult> Logout([FromBody] RefreshRequest request)
     {
         try
         {
-            var revokeSucceeded = await authRepository.RevokeTokenAsync(request.RefreshToken, request.IpAddress);
+            var revokeSucceeded = await authProvider.RevokeTokenAsync(request.RefreshToken, request.IpAddress);
             if (!revokeSucceeded)
                 return BadRequest("Token revocation failed. Token may be invalid or already revoked.");
 
@@ -119,13 +124,9 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
                 return BadRequest("UserId claim is missing or invalid.");
             }
         
-            var count = await authRepository.RevokeAllTokensAsync(userId);
+            var count = await authProvider.RevokeAllTokenAsync(userId);
 
             return Ok($"{count} sessions revoked");
-        }
-        catch (InvalidOperationException ex)
-        {
-            return Conflict(ex.Message);
         }
         catch (Exception ex)
         {
@@ -144,7 +145,7 @@ public class AuthController(ILogger<AuthController> logger, AuthRepository authR
 
         try
         {
-            await authRepository.RegisterUserAsync(request, role);
+            await authProvider.RegisterUserAsync(request, role);
         }
         catch (InvalidOperationException ex)
         {

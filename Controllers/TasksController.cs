@@ -14,7 +14,7 @@ public class TasksController(TaskRepository repository, ILogger<TasksController>
     public async Task<IActionResult> GetAllTasks()
     {
         logger.LogInformation("Getting all tasks");
-        var tasks = await repository.GetAll();
+        var tasks = await repository.GetAllTasks();
         return Ok(tasks);
     }
 
@@ -42,9 +42,7 @@ public class TasksController(TaskRepository repository, ILogger<TasksController>
 
         try
         {
-            task.IsCompleted = false;
-            task.ModifiedDate = DateTime.UtcNow;
-            await repository.Create(task);
+            await repository.CreateTask(task);
             return Ok($"Task created successfully for user");
         }
         catch (Exception ex)
@@ -66,19 +64,12 @@ public class TasksController(TaskRepository repository, ILogger<TasksController>
 
         try
         {
-            task.ModifiedDate = DateTime.UtcNow;
-
-            await repository.Update(task);
+            await repository.UpdateTask(task);
             return Ok($"Task updated successfully for user");
-
         }
         catch (Exception ex)
         {
             return StatusCode(500,ex.Message);
         }
- 
     }
-    
-    
-    
 }

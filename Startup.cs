@@ -3,11 +3,14 @@ using System.Text.Json;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using TodoBackend.Configurations;
 using TodoBackend.Database;
 using TodoBackend.Repository;
 using TodoBackend.Security;
+using TodoBackend.Services;
 
 namespace TodoBackend;
 
@@ -19,16 +22,80 @@ public class Startup(IConfiguration configuration)
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddControllers();
-        services.AddScoped(typeof(IDatabaseContext<>), typeof(DatabaseContext<>));
         services.AddScoped<TaskRepository>();
         services.AddScoped<UserRepository>();
-        services.AddScoped<AuthRepository>();
+        services.AddScoped<AuthProvider>();
         services.AddScoped<TokenRepository>();
         services.Configure<DatabaseConfig>(Configuration.GetSection("DatabaseSettings"));
+        
+        ConfigureAuthentication(services);
+        ConfigureAuthorization(services);
+        ConfigureDatabase(services);
+        ConfigureRateLimiting(services);
+        
+        services.AddHttpContextAccessor();
+
+        // -------------------- Swagger --------------------
+        services.AddEndpointsApiExplorer();
+        services.AddSwaggerGen();
+
+        // -------------------- CORS --------------------
+        services.AddCors(options =>
+        {
+            options.AddPolicy("CorsPolicy", build => build
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials()
+                .SetIsOriginAllowed((hosts) => true));
+        });
+    }
+
+    // -------------------- Middleware Pipeline --------------------
+    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
+    {
+        if (env.IsDevelopment())
+        {
+            app.UseSwagger();
+            app.UseSwaggerUI();
+        }
+        else
+        {
+            app.UseHsts();
+        }
+
+        app.UseRateLimiter();
+        app.UseCors("CorsPolicy");
+        app.UseHttpsRedirection();
+        app.UseRouting();
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
+    }
+    
+    private void ConfigureDatabase(IServiceCollection services)
+    {
+        // -------------------- Database Settings --------------------
+        var serviceProvider = services.BuildServiceProvider();
+        var databaseConfigs = serviceProvider.GetRequiredService<IOptions<DatabaseConfig>>().Value;
+        
+        var connectionString = "Server=" + databaseConfigs.Server
+                                                          + ";Port=" + databaseConfigs.Port
+                                                          + ";Database=" + databaseConfigs.Database
+                                                          + ";User=" + databaseConfigs.User
+                                                          + ";Password=" + databaseConfigs.Password + ";";
+        
+        services.AddDbContext<AppDatabaseContext>( options =>
+            options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+    }
+    
+    
+
+    private void ConfigureAuthentication(IServiceCollection services)
+    {
         services.Configure<JwtOptions>(Configuration.GetSection("Jwt"));
         var jwtOptions = Configuration.GetSection("Jwt").Get<JwtOptions>();
-
-        // -------------------- Authentication --------------------
+        
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
             {
@@ -40,19 +107,23 @@ public class Startup(IConfiguration configuration)
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = jwtOptions!.Issuer ?? throw new InvalidOperationException("Jwt Issuer is missing"),
                     ValidAudience = jwtOptions!.Audience ??
-                                        throw new InvalidOperationException("Jwt Audience is missing"),
+                                    throw new InvalidOperationException("Jwt Audience is missing"),
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions!.Key ??
                         throw new InvalidOperationException("Jwt Key is missing")))
                 };
             });
-
-        // -------------------- Authorization --------------------
+    }
+    
+    private void ConfigureAuthorization(IServiceCollection services)
+    {
         services.AddSingleton<IAuthorizationHandler, ResourceOwnerHandler>();
         services.AddAuthorizationBuilder()
             .AddPolicy(AppConstants.CanEditOwnProfile,
                 policy => policy.Requirements.Add(new SameUserRequirement(AppConstants.UserId)));
-
-        // -------------------- Rate Limiting --------------------
+    }
+    
+    private void ConfigureRateLimiting(IServiceCollection services)
+    {
         services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -96,45 +167,5 @@ public class Startup(IConfiguration configuration)
                         QueueLimit = 0
                     }));
         });
-
-        // -------------------- Miscellaneous Services --------------------
-        services.AddHttpContextAccessor();
-
-        // -------------------- Swagger --------------------
-        services.AddEndpointsApiExplorer();
-        services.AddSwaggerGen();
-
-        // -------------------- CORS --------------------
-        services.AddCors(options =>
-        {
-            options.AddPolicy("CorsPolicy", build => build
-                .AllowAnyHeader()
-                .AllowAnyMethod()
-                .AllowCredentials()
-                .SetIsOriginAllowed((hosts) => true));
-        });
-    }
-
-    // -------------------- Middleware Pipeline --------------------
-    public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
-    {
-        if (env.IsDevelopment())
-        {
-            app.UseSwagger();
-            app.UseSwaggerUI();
-        }
-        else
-        {
-            app.UseHsts();
-        }
-
-        app.UseRateLimiter();
-        app.UseCors("CorsPolicy");
-        app.UseHttpsRedirection();
-        app.UseRouting();
-        app.UseAuthentication();
-        app.UseAuthorization();
-
-        app.UseEndpoints(endpoints => { endpoints.MapControllers(); });
     }
 }

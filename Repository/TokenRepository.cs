@@ -1,176 +1,188 @@
 using System.Data;
 using System.Data.Common;
 using System.Security.Cryptography;
+using Microsoft.EntityFrameworkCore;
 using MySqlConnector;
 using TodoBackend.Database;
 using TodoBackend.Model;
 
 namespace TodoBackend.Repository;
 
-public class TokenRepository(IDatabaseContext<RefreshToken> dbContext, ILogger<TokenRepository> logger)
-    : BaseRepository<RefreshToken>(dbContext)
+public class TokenRepository(AppDatabaseContext databaseContext, ILogger<TokenRepository> logger)
 {
-    protected override Task CreateTable()
-    {
-        var createTableSql = @"
-            CREATE TABLE IF NOT EXISTS RefreshToken (
-                Id INT PRIMARY KEY AUTO_INCREMENT,
-                UserId INT,
-                Token VARCHAR(255),
-                Expires DATETIME,
-                Created DATETIME,
-                CreatedByIp VARCHAR(45),
-                Revoked DATETIME NULL,
-                RevokedByIp VARCHAR(45) NULL,
-                ReplacedByToken VARCHAR(255) NULL,
-                FOREIGN KEY (UserId) REFERENCES User(Id) ON DELETE CASCADE
-            )";
 
-        return dbContext.ExecuteAction(createTableSql);
+    private static RefreshToken CreateNewRefreshToken(int userId, string tokenString, string ipAddress)
+    {
+        return new RefreshToken
+        {
+            UserId = userId,
+            Token = tokenString,
+            Expires = DateTime.UtcNow.AddDays(7),
+            Created = DateTime.UtcNow,
+            CreatedByIp = ipAddress,
+            Revoked = null,
+            RevokedByIp = null,
+            ReplacedByToken = null
+        };
     }
 
     public async Task<(int UserId, string NewRefreshToken)> RefreshUserToken(string oldRefreshToken, string ipAddress)
     {
         logger.LogInformation("Executing transactions for token refresh");
 
-        var token = await GetToken(oldRefreshToken);
-        if (token == null)
+        await using var transaction = await databaseContext.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+        try
         {
-            throw new InvalidOperationException("Invalid refresh token");
-        }
-        
-        if (token.Revoked != null)
-        {
-            await RevokeAllTokens(token.UserId);
-            throw new InvalidOperationException(
-                "Token reuse detected. Transaction flagged. User tokens will be reset. Please login again on all devices.");
-        }
-        
-        if (token.Expires <= DateTime.UtcNow)
-        {
-            throw new UnauthorizedAccessException("Refresh token expired. Please login again.");
-        }
-        
-        return await dbContext.ExecuteTransactions(async sqlCommand =>
-        {
-            
-            sqlCommand.CommandText = $"SELECT {nameof(RefreshToken.Id)} FROM {nameof(RefreshToken)} WHERE {nameof(RefreshToken.Token)} = @Token FOR UPDATE";
-            sqlCommand.Parameters.Clear();
-            sqlCommand.Parameters.AddWithValue("@Token", oldRefreshToken);
-            var lockedTokenId = (int?)await sqlCommand.ExecuteScalarAsync();
-            if (lockedTokenId == null)
+            var token = await databaseContext.RefreshToken
+                .FromSqlRaw("SELECT * FROM RefreshToken WHERE Token = {0} FOR UPDATE", oldRefreshToken)
+                .FirstOrDefaultAsync();
+
+            if (token is null)
             {
-                throw new InvalidOperationException("Token was modified concurrently. Please try again.");
-            }
-            
-            // Insert new
-            var newRefreshToken = GenerateRefreshToken();
-            var newExpiryDate = DateTime.UtcNow.AddDays(7);
-            var now = DateTime.UtcNow;
-
-            // Revoke old atmically
-            sqlCommand.CommandText =
-                $@"UPDATE {nameof(RefreshToken)} SET 
-                    {nameof(RefreshToken.Revoked)} = @Revoked, 
-                    {nameof(RefreshToken.ReplacedByToken)} = @NewToken, 
-                    {nameof(RefreshToken.RevokedByIp)} = @RevokedByIp 
-                WHERE Token = @OldToken AND {nameof(RefreshToken.Revoked)} IS NULL";
-            sqlCommand.Parameters.Clear();
-            sqlCommand.Parameters.AddWithValue("@Revoked", now);
-            sqlCommand.Parameters.AddWithValue("@RevokedByIp", ipAddress);
-            sqlCommand.Parameters.AddWithValue("@OldToken", oldRefreshToken);
-            sqlCommand.Parameters.AddWithValue("@NewToken", newRefreshToken);
-            
-            var affectedRows = await sqlCommand.ExecuteNonQueryAsync();
-            if (affectedRows == 0)
-            {
-                throw new InvalidOperationException("Failed to revoke old refresh token. Please try again.");
-            }
-            
-            sqlCommand.CommandText = $@"INSERT INTO {nameof(RefreshToken)}
-                                (UserId, Token, Expires, Created, CreatedByIp, Revoked, RevokedByIp, ReplacedByToken)
-                                VALUES (@UserId, @Token, @Expires, @Created, @CreatedByIp, NULL, NULL, NULL)";
-            sqlCommand.Parameters.Clear();
-            sqlCommand.Parameters.AddWithValue("@UserId", token.UserId);
-            sqlCommand.Parameters.AddWithValue("@Token", newRefreshToken);
-            sqlCommand.Parameters.AddWithValue("@Expires", newExpiryDate);
-            sqlCommand.Parameters.AddWithValue("@Created", now);
-            sqlCommand.Parameters.AddWithValue("@CreatedByIp", ipAddress);
-            await sqlCommand.ExecuteNonQueryAsync(); 
-            
-            return (token.UserId, newRefreshToken);
-        });
-    }
-
-    public async Task<bool> RevokeToken(string oldRefreshToken, string ipAddress)
-    {
-        return await dbContext.ExecuteTransactions(async sqlCommand =>
-        {
-            var getTokenQuery = $"SELECT * FROM {nameof(RefreshToken)} WHERE Token = @Token FOR UPDATE";
-
-            sqlCommand.CommandText = getTokenQuery;
-            sqlCommand.Parameters.Clear();
-            sqlCommand.Parameters.AddWithValue("@Token", oldRefreshToken);
-
-            int? tokenId;
-            DateTime? revoked;
-
-            await using (var reader = await sqlCommand.ExecuteReaderAsync())
-            {
-                if (!await reader.ReadAsync())
-                    throw new InvalidOperationException("Invalid or expired refresh token");
-
-                tokenId = reader.GetInt32(reader.GetOrdinal(nameof(RefreshToken.Id)));
-                revoked = reader.IsDBNull(reader.GetOrdinal(nameof(RefreshToken.Revoked)))
-                    ? null
-                    : reader.GetDateTime(reader.GetOrdinal(nameof(RefreshToken.Revoked)));
+                throw new InvalidOperationException("Token was modified concurrently or doesnt exist. Please try again.");
             }
 
-            if (tokenId == null)
-                throw new InvalidOperationException("Invalid or expired refresh token");
+            if (token.Revoked != null)
+            {
+                await RevokeAllTokens(token.UserId, false);
+                await databaseContext.SaveChangesAsync();
+                await transaction.CommitAsync(); 
+                
+                throw new InvalidOperationException(
+                    "Token reuse detected. Transaction flagged. User tokens will be reset. Please login again on all devices.");
+            }
 
-            if (revoked != null)
-                throw new InvalidOperationException("Token already revoked");
+            if (token.Expires <= DateTime.UtcNow)
+            {
+                throw new InvalidOperationException("Refresh token expired. Please login again.");
+            }
 
-            var revokeOldTokenCommand =
-                $"UPDATE {nameof(RefreshToken)} SET {nameof(RefreshToken.Revoked)} = @Revoked, {nameof(RefreshToken.RevokedByIp)} = @RevokedByIp WHERE Token = @Token AND {nameof(RefreshToken.Revoked)} IS NULL";
-            // Revoke old
+            var newTokenString = GenerateTokenString();
+            var newRefreshToken = CreateNewRefreshToken(token.UserId, newTokenString, ipAddress);
 
-            sqlCommand.CommandText = revokeOldTokenCommand;
-            sqlCommand.Parameters.Clear();
-            sqlCommand.Parameters.AddWithValue("@Revoked", DateTime.UtcNow);
-            sqlCommand.Parameters.AddWithValue("@RevokedByIp", ipAddress);
-            sqlCommand.Parameters.AddWithValue("@Token", oldRefreshToken);
-            var changed = await sqlCommand.ExecuteNonQueryAsync();
-            return changed > 0;
-        });
+            // Revoke old token
+            token.Revoked = DateTime.UtcNow;
+            token.RevokedByIp = ipAddress;
+            token.ReplacedByToken = newTokenString;
+
+            await databaseContext.RefreshToken.AddAsync(newRefreshToken);
+
+            await databaseContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+
+            return (token.UserId, newTokenString);
+
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during token refresh, rolling back transaction.");
+            await transaction.RollbackAsync();
+            throw;
+        }
     }
     
-    public async Task<int> RevokeAllTokens(int userId)
+    public async Task<bool> RevokeToken(string tokenToRevoke, string ipAddress)
     {
-        logger.LogWarning("Revoking all tokens for user {UserId}", userId);
-        var query =
-            $"UPDATE {nameof(RefreshToken)} SET {nameof(RefreshToken.Revoked)} = @Revoked WHERE {nameof(RefreshToken.UserId)} = @UserId AND {nameof(RefreshToken.Revoked)} IS NULL";
-        var parameters = new Dictionary<string, object>
+        logger.LogInformation("Executing transactions for token revoke");
+        await using var transaction = await databaseContext.Database.BeginTransactionAsync(IsolationLevel.Serializable);
+
+        try
         {
-            { "@Revoked", DateTime.UtcNow },
-            { "@UserId", userId }
-        };
+            var token = await databaseContext.RefreshToken
+                .FromSqlRaw("SELECT * FROM RefreshToken WHERE Token = {0} FOR UPDATE", tokenToRevoke)
+                .FirstOrDefaultAsync();
+
+            if (token is null)
+            {
+                throw new InvalidOperationException("Token invalid. Please try again.");
+            }
+
+            if (token.Revoked is not null)
+            {
+                throw new InvalidOperationException("Token already revoked");
+            }
+
+            token.Revoked = DateTime.UtcNow;
+            token.RevokedByIp = ipAddress;
+            var recordsUpdated = await databaseContext.SaveChangesAsync();
+            await transaction.CommitAsync();
+            return recordsUpdated > 0;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error during token revoke, rolling back transaction.");
+            await transaction.RollbackAsync();
+            throw;
+        }
+    }
+    
+    
+    public async Task<int> RevokeAllTokens(int userId, bool saveChanges = true)
+    {
+        var tokensRevoked = await databaseContext.RefreshToken
+            .Where(x => x.UserId == userId && x.Revoked == null)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(t => t.Revoked, DateTime.UtcNow));
         
-        return await dbContext.ExecuteAction(query, parameters);
+        if(saveChanges)
+            await databaseContext.SaveChangesAsync();
+        
+        return tokensRevoked;
     }
-
-    public async Task<RefreshToken> GetToken(string token)
+    
+    
+    public async Task CreateToken(RefreshToken refreshToken)
     {
-        const string query = $"SELECT * FROM {nameof(RefreshToken)} WHERE {nameof(RefreshToken.Token)} = @Token";
-        var parameters = new Dictionary<string, object>
-        {
-            { "@Token", token },
-        };
-        return await dbContext.GetResult(query, parameters);
+        await databaseContext.RefreshToken.AddAsync(refreshToken);
+        await databaseContext.SaveChangesAsync();
     }
-
-    private static string GenerateRefreshToken()
+    
+    public async Task<List<RefreshToken>> GetAllTokens()
+    {
+        return await databaseContext.RefreshToken.ToListAsync();
+    }
+    
+    public async Task<RefreshToken?> GetToken(string token)
+    {
+        return await databaseContext.RefreshToken.FirstOrDefaultAsync(x => x.Token == token);
+    }
+    
+    public async Task DeleteToken(string token)
+    {
+        var tokenToRemove = databaseContext.RefreshToken.FirstOrDefault(t => t.Token == token); 
+        if (tokenToRemove == null)
+        {
+            throw new ArgumentException("Task not found");
+        }
+        databaseContext.RefreshToken.Remove(tokenToRemove);
+        await databaseContext.SaveChangesAsync();
+    }
+    
+    public async Task DeleteAllTokensForUser(int userId)
+    {
+        var tokenToRemove = databaseContext.RefreshToken.Where(t => t.UserId == userId);
+        if (!tokenToRemove.Any())
+        {
+            return;
+        }
+        databaseContext.RefreshToken.RemoveRange(tokenToRemove);
+        await databaseContext.SaveChangesAsync();
+    }
+    
+    public async Task DeleteAllTokens()
+    {
+        var tokensToRemove = databaseContext.RefreshToken.Where(x => true);   
+        if (!tokensToRemove.Any())
+        {
+            return;
+        }
+        databaseContext.RefreshToken.RemoveRange(tokensToRemove);
+        await databaseContext.SaveChangesAsync();
+    }
+    
+    
+    public string GenerateTokenString()
     {
         var randomBytes = new byte[64];
         using var rng = RandomNumberGenerator.Create();

@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace TodoBackend.Model;
 
 public class User
@@ -12,6 +14,7 @@ public class User
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
     public string Role { get; set; }
+    [NotMapped]
     public string Email => UserName;
 
 }

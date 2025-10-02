@@ -1,22 +1,32 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Security.Cryptography;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using TodoBackend.Configurations;
 using TodoBackend.Model;
 using TodoBackend.Model.Auth;
+using TodoBackend.Repository;
 
-namespace TodoBackend.Repository;
+namespace TodoBackend.Services;
 
-public class AuthRepository(ILogger<AuthRepository> logger, 
+public class AuthProvider(ILogger<AuthProvider> logger, 
     UserRepository userRepository, 
     TokenRepository tokenRepository,
     IOptions<JwtOptions> jwtOptions)
 {
     private readonly JwtOptions _jwtOptions = jwtOptions.Value;
-    private readonly ILogger<AuthRepository> _logger = logger;
+    private readonly ILogger<AuthProvider> _logger = logger;
+    
+    public async Task<bool> RevokeTokenAsync(string refreshToken, string ipAddress)
+    {
+        return await tokenRepository.RevokeToken(refreshToken, ipAddress);
+    }
+    
+    public async Task<int> RevokeAllTokenAsync(int userId)
+    {
+        return await tokenRepository.RevokeAllTokens(userId);
+    }
     
     public async Task<(string accessToken, string refreshToken)> LoginAsync(LoginRequest request, string ipAddress)
     {
@@ -32,8 +42,8 @@ public class AuthRepository(ILogger<AuthRepository> logger,
             throw new UnauthorizedAccessException("Invalid credentials. Please check your username and password.");
         }
         
-        var accessToken = GenerateAccessToken(request.Username, returnedUser.Role, returnedUser.Id.ToString());
-        var refreshToken = GenerateRandomString();
+        var accessToken = GenerateJwtAccessToken(request.Username, returnedUser.Role, returnedUser.Id.ToString());
+        var refreshToken = tokenRepository.GenerateTokenString();
         var refreshTokenExpiration = DateTime.UtcNow.AddDays(7);
         var token = new RefreshToken()
         {
@@ -43,34 +53,25 @@ public class AuthRepository(ILogger<AuthRepository> logger,
             Created = DateTime.UtcNow,
             CreatedByIp = ipAddress,
             Revoked = null,
-            RevokedByIp = "",
-            ReplacedByToken = ""
+            RevokedByIp = string.Empty,
+            ReplacedByToken = string.Empty,
         };
         
-        await tokenRepository.Create(token);
+        await tokenRepository.CreateToken(token);
         return (accessToken, refreshToken);
     }
     
-    public async Task<bool> RevokeTokenAsync(string refreshToken, string ipAddress)
-    {
-        return await tokenRepository.RevokeToken(refreshToken, ipAddress);
-    }
     
-    public async Task<int> RevokeAllTokensAsync(int userId)
-    {
-        return await tokenRepository.RevokeAllTokens(userId);
-    }
-
     public async Task<(string accessToken, string refreshToken)> RefreshTokenAsync(string refreshToken, string ipAddress)
     {                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           
         var (userId, newRefreshToken) = await tokenRepository.RefreshUserToken(refreshToken, ipAddress);
-        var returnedUser = await userRepository.GetById(userId);
+        var returnedUser = await userRepository.GetUser(userId);
         if (returnedUser is null)
         {
             throw new UnauthorizedAccessException("No user record exists. Please login again.");
         }
         
-        var accessToken = GenerateAccessToken(returnedUser.UserName, returnedUser.Role, returnedUser.Id.ToString());
+        var accessToken = GenerateJwtAccessToken(returnedUser.UserName, returnedUser.Role, returnedUser.Id.ToString());
         return (accessToken, newRefreshToken);
     }
     
@@ -95,11 +96,11 @@ public class AuthRepository(ILogger<AuthRepository> logger,
             Role = role,
         };
 
-        await userRepository.Create(newUser);
+        await userRepository.CreateUser(newUser);
     }
 
 
-    private string GenerateAccessToken(string username, string role, string userId)
+    private string GenerateJwtAccessToken(string username, string role, string userId)
     {
         var claimsList = new[]
         {
@@ -119,14 +120,6 @@ public class AuthRepository(ILogger<AuthRepository> logger,
             signingCredentials: credentials);
         
        return new JwtSecurityTokenHandler().WriteToken(accessToken);
-    }
-    
-    private string GenerateRandomString()
-    {
-        var randomBytes = new byte[64];
-        using var rng = RandomNumberGenerator.Create();
-        rng.GetBytes(randomBytes);
-        return Convert.ToBase64String(randomBytes);
     }
 
 }
