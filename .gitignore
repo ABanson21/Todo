@@ -1,0 +1,70 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# JetBrains Rider / IntelliJ
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+
+# Build output
+bin/
+obj/
+out/
+[Bb]uild/
+[Tt]est[Rr]esults/
+publish/
+artifacts/
+
+# Logs & temp
+logs/
+[Ll]ogs/
+*.log
+*.tmp
+*.temp
+
+# User-specific files
+*.user
+*.userosscache
+*.suo
+*.sln.docstates
+*.sln.DotSettings.user
+*.DotSettings.user
+
+# NuGet
+*.nupkg
+*.snupkg
+# If using packages.config style restores
+packages/
+
+# ReSharper
+_ReSharper*/
+*.[Rr]e[Ss]harper
+
+# Coverage reports
+*.coverage
+*.coveragexml
+coverage/
+*.opencover.xml
+*.cobertura.xml
+
+# SQL Server localdb files (if any)
+*.mdf
+*.ldf
+
+# HTTP request scratch (JetBrains IDE)
+httpRequests/
+
+# Node tooling (if present in solution)
+node_modules/
+
+# Optional: OS metadata
+Thumbs.db
+ehthumbs.db
+
