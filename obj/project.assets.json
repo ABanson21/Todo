@@ -3526,7 +3526,6 @@
       "Microsoft.AspNetCore.Authentication.JwtBearer >= 8.0.20",
       "Microsoft.AspNetCore.OpenApi >= 8.0.20",
       "Microsoft.EntityFrameworkCore.Design >= 9.0.9",
-      "MySqlConnector >= 2.4.0",
       "Pomelo.EntityFrameworkCore.MySql >= 9.0.0",
       "Swashbuckle.AspNetCore >= 9.0.4",
       "System.IdentityModel.Tokens.Jwt >= 8.14.0"
@@ -3591,10 +3590,6 @@
             "suppressParent": "All",
             "target": "Package",
             "version": "[9.0.9, )"
-          },
-          "MySqlConnector": {
-            "target": "Package",
-            "version": "[2.4.0, )"
           },
           "Pomelo.EntityFrameworkCore.MySql": {
             "target": "Package",
