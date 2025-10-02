@@ -21,6 +21,8 @@ public class AppDatabaseContext(DbContextOptions<AppDatabaseContext> dbContextOp
     {
         modelBuilder.Entity<User>(entity =>
         {
+            entity.ToTable("user"); 
+
             entity.HasKey(e => e.Id);
             
             // Add unique indexes for UserName and Email
@@ -41,6 +43,8 @@ public class AppDatabaseContext(DbContextOptions<AppDatabaseContext> dbContextOp
     {
         modelBuilder.Entity<RefreshToken>(entity =>
         {
+            entity.ToTable("refreshtoken"); 
+
             entity.HasKey(e => e.Id);
             
             entity.HasIndex(e => e.Token).IsUnique();
@@ -61,6 +65,8 @@ public class AppDatabaseContext(DbContextOptions<AppDatabaseContext> dbContextOp
     {
         modelBuilder.Entity<TaskItem>(entity =>
         {
+            entity.ToTable("taskitem"); 
+
             entity.HasKey(e => e.Id);
             
             entity.HasIndex(e => new { e.UserId, e.IsCompleted });

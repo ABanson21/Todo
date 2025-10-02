@@ -79,14 +79,16 @@ public class Startup(IConfiguration configuration)
         var serviceProvider = services.BuildServiceProvider();
         var databaseConfigs = serviceProvider.GetRequiredService<IOptions<DatabaseConfig>>().Value;
         
-        var connectionString = "Server=" + databaseConfigs.Server
-                                                          + ";Port=" + databaseConfigs.Port
-                                                          + ";Database=" + databaseConfigs.Database
-                                                          + ";User=" + databaseConfigs.User
-                                                          + ";Password=" + databaseConfigs.Password + ";";
+        var connectionString = $"Host={databaseConfigs.Host};" +
+                               $"Database={databaseConfigs.Database};" +
+                               $"Username={databaseConfigs.Username};" +
+                               $"Password={databaseConfigs.Password};" +
+                               "SslMode=Require;" +
+                               "Trust Server Certificate=true;";
         
         services.AddDbContext<AppDatabaseContext>( options =>
-            options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
+            options.UseNpgsql(connectionString).UseLowerCaseNamingConvention());
+        
     }
     
     

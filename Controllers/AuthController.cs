@@ -76,7 +76,7 @@ public class AuthController(ILogger<AuthController> logger, AuthProvider authPro
         {
             return Unauthorized(ex.Message);
         }
-        catch (Exception ex) when (ex.Message.Contains("Already committed"))
+        catch (Exception ex) when (ex.Message.Contains("NpgsqlTransaction has completed"))
         {
             return StatusCode(500, "Request Revoked. Please login on all devices again.");
         }
