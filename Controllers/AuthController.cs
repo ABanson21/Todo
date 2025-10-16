@@ -6,7 +6,6 @@ using Microsoft.Extensions.Options;
 using TodoBackend.Configurations;
 using TodoBackend.Model;
 using TodoBackend.Model.Auth;
-using TodoBackend.Repository;
 using TodoBackend.Services;
 
 namespace TodoBackend.Controllers;
@@ -117,7 +116,7 @@ public class AuthController(ILogger<AuthController> logger, AuthProvider authPro
     {
         try
         {
-            var userContained = Int32.TryParse(User.FindFirstValue(nameof(TaskItem.UserId)), out var userId);
+            var userContained = Int32.TryParse(User.FindFirstValue(nameof(AppConstants.UserId)), out var userId);
 
             if (!userContained)
             {

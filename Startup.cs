@@ -22,11 +22,10 @@ public class Startup(IConfiguration configuration)
     public void ConfigureServices(IServiceCollection services)
     {
         services.AddControllers();
-        services.AddScoped<TaskRepository>();
-        services.AddScoped<UserRepository>();
+        services.AddScoped<UserRepository>();          
         services.AddScoped<AuthProvider>();
         services.AddScoped<TokenRepository>();
-        services.Configure<DatabaseConfig>(Configuration.GetSection("DatabaseSettings"));
+        services.Configure<DatabaseSettings>(Configuration.GetSection("DatabaseSettings"));
         
         ConfigureAuthentication(services);
         ConfigureAuthorization(services);
@@ -52,8 +51,8 @@ public class Startup(IConfiguration configuration)
 
     // -------------------- Middleware Pipeline --------------------
     public void Configure(IApplicationBuilder app, IWebHostEnvironment env)
-    {
-        if (env.IsDevelopment())
+    { 
+        if (!env.IsDevelopment())
         {
             app.UseSwagger();
             app.UseSwaggerUI();
@@ -76,15 +75,21 @@ public class Startup(IConfiguration configuration)
     private void ConfigureDatabase(IServiceCollection services)
     {
         // -------------------- Database Settings --------------------
-        var serviceProvider = services.BuildServiceProvider();
-        var databaseConfigs = serviceProvider.GetRequiredService<IOptions<DatabaseConfig>>().Value;
+        //var serviceProvider = services.BuildServiceProvider();
+        var databaseSettings = Configuration.GetSection(nameof(DatabaseSettings)).Get<DatabaseSettings>();
+        var connectionString = $"Host={databaseSettings.Host};" +
+                               $"Port={databaseSettings.Port};" +
+                               $"Database={databaseSettings.Database};" +
+                               $"Username={databaseSettings.Username};" +
+                               $"Password={databaseSettings.Password};";
+                           
+        var isProduction = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Production";
         
-        var connectionString = $"Host={databaseConfigs.Host};" +
-                               $"Database={databaseConfigs.Database};" +
-                               $"Username={databaseConfigs.Username};" +
-                               $"Password={databaseConfigs.Password};" +
-                               "SslMode=Require;" +
-                               "Trust Server Certificate=true;";
+        if (isProduction)
+        {
+            connectionString += "SslMode=Require;" + "Trust Server Certificate=true;";
+        }
+        
         
         services.AddDbContext<AppDatabaseContext>( options =>
             options.UseNpgsql(connectionString).UseLowerCaseNamingConvention());
@@ -121,7 +126,7 @@ public class Startup(IConfiguration configuration)
         services.AddSingleton<IAuthorizationHandler, ResourceOwnerHandler>();
         services.AddAuthorizationBuilder()
             .AddPolicy(AppConstants.CanEditOwnProfile,
-                policy => policy.Requirements.Add(new SameUserRequirement(AppConstants.UserId)));
+                policy => policy.Requirements.Add(new ResourceOwnerRequirement()));
     }
     
     private void ConfigureRateLimiting(IServiceCollection services)

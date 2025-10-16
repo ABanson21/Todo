@@ -13,6 +13,20 @@ namespace TodoBackend.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
+                name: "belt",
+                columns: table => new
+                {
+                    id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    color = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    rank = table.Column<int>(type: "integer", maxLength: 100, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_belt", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "user",
                 columns: table => new
                 {
@@ -25,7 +39,8 @@ namespace TodoBackend.Migrations
                     phonenumber = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
                     createdat = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     updatedat = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    role = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false)
+                    profilepicture = table.Column<byte[]>(type: "bytea", nullable: true),
+                    role = table.Column<int>(type: "integer", maxLength: 255, nullable: false)
                 },
                 constraints: table =>
                 {
@@ -59,27 +74,84 @@ namespace TodoBackend.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "taskitem",
+                name: "student",
                 columns: table => new
                 {
-                    id = table.Column<int>(type: "integer", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     userid = table.Column<int>(type: "integer", nullable: false),
-                    description = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
-                    duedate = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    modifieddate = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    iscompleted = table.Column<bool>(type: "boolean", nullable: false)
+                    dateofbirth = table.Column<DateOnly>(type: "date", nullable: false),
+                    startdate = table.Column<DateOnly>(type: "date", nullable: false),
+                    notes = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    beltid = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("pk_taskitem", x => x.id);
+                    table.PrimaryKey("pk_student", x => x.userid);
                     table.ForeignKey(
-                        name: "fk_taskitem_user_userid",
+                        name: "fk_student_belt_beltid",
+                        column: x => x.beltid,
+                        principalTable: "belt",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "fk_student_user_userid",
                         column: x => x.userid,
                         principalTable: "user",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 });
+
+            migrationBuilder.CreateTable(
+                name: "parent_student",
+                columns: table => new
+                {
+                    studentid = table.Column<int>(type: "integer", nullable: false),
+                    parentid = table.Column<int>(type: "integer", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_parent_student", x => new { x.studentid, x.parentid });
+                    table.ForeignKey(
+                        name: "fk_parent_student_student_studentid",
+                        column: x => x.studentid,
+                        principalTable: "student",
+                        principalColumn: "userid",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "fk_parent_student_user_parentid",
+                        column: x => x.parentid,
+                        principalTable: "user",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "student_instructor",
+                columns: table => new
+                {
+                    studentid = table.Column<int>(type: "integer", nullable: false),
+                    instructorid = table.Column<int>(type: "integer", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_student_instructor", x => new { x.studentid, x.instructorid });
+                    table.ForeignKey(
+                        name: "fk_student_instructor_student_studentid",
+                        column: x => x.studentid,
+                        principalTable: "student",
+                        principalColumn: "userid",
+                        onDelete: ReferentialAction.Cascade);
+                    table.ForeignKey(
+                        name: "fk_student_instructor_user_instructorid",
+                        column: x => x.instructorid,
+                        principalTable: "user",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_parent_student_parentid",
+                table: "parent_student",
+                column: "parentid");
 
             migrationBuilder.CreateIndex(
                 name: "ix_refreshtoken_token",
@@ -93,14 +165,14 @@ namespace TodoBackend.Migrations
                 column: "userid");
 
             migrationBuilder.CreateIndex(
-                name: "ix_taskitem_userid_duedate",
-                table: "taskitem",
-                columns: new[] { "userid", "duedate" });
+                name: "ix_student_beltid",
+                table: "student",
+                column: "beltid");
 
             migrationBuilder.CreateIndex(
-                name: "ix_taskitem_userid_iscompleted",
-                table: "taskitem",
-                columns: new[] { "userid", "iscompleted" });
+                name: "ix_student_instructor_instructorid",
+                table: "student_instructor",
+                column: "instructorid");
 
             migrationBuilder.CreateIndex(
                 name: "ix_user_username",
@@ -113,10 +185,19 @@ namespace TodoBackend.Migrations
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "parent_student");
+
+            migrationBuilder.DropTable(
                 name: "refreshtoken");
 
             migrationBuilder.DropTable(
-                name: "taskitem");
+                name: "student_instructor");
+
+            migrationBuilder.DropTable(
+                name: "student");
+
+            migrationBuilder.DropTable(
+                name: "belt");
 
             migrationBuilder.DropTable(
                 name: "user");

@@ -1,42 +1,43 @@
-using System.Text;
-using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
+using TodoBackend.Model.Enums;
 
 namespace TodoBackend.Security;
 
-public class ResourceOwnerHandler(IHttpContextAccessor httpContextAccessor) : AuthorizationHandler<IResourceOwnerRequirement>
+public class ResourceOwnerHandler(IHttpContextAccessor httpContextAccessor) : AuthorizationHandler<ResourceOwnerRequirement>
 {
-    protected override async  Task HandleRequirementAsync(AuthorizationHandlerContext context,
-        IResourceOwnerRequirement requirement)
+    protected override Task HandleRequirementAsync(
+        AuthorizationHandlerContext context,
+        ResourceOwnerRequirement requirement)
     {
-        if (context.User.IsInRole("Admin"))
+        var httpContext = httpContextAccessor.HttpContext;
+        if (httpContext == null)
+            return Task.CompletedTask;
+        
+        if (context.User.IsInRole(nameof(UserRole.Admin)))
         {
             context.Succeed(requirement);
-            return;
+            return Task.CompletedTask;;
         }
 
-        var userIdClaim = context.User.FindFirst("UserId")?.Value;
+        var userIdClaim = context.User.FindFirst(AppConstants.UserId)?.Value;
      
         if (userIdClaim == null)
-            return;
+            return Task.CompletedTask;;
         
-        // enable the buffer before you interact with the httpContext request. else there will be issues
-        httpContextAccessor!.HttpContext.Request.EnableBuffering();
-
-        var requestBody = httpContextAccessor.HttpContext!.Request.Body;
-        using var reader = new StreamReader(requestBody, Encoding.UTF8, leaveOpen: true);
-        var body = await reader.ReadToEndAsync();
-        requestBody.Position = 0;
+        if (!int.TryParse(userIdClaim, out var authenticatedUser))
+            return Task.CompletedTask;;
         
-        if(string.IsNullOrEmpty(body))
-            return;
-
-        var jsonParse =  JsonDocument.Parse(body).RootElement;
-        var bodyElement = jsonParse.TryGetProperty(requirement.RouteParameterName, out var userId);
+        var routeUserId = httpContext.GetRouteValue("userId")?.ToString();
+        if (routeUserId == null)
+        {
+            context.Succeed(requirement);
+            return Task.CompletedTask;
+        }
         
-        if (userId.ToString() == userIdClaim)
+        if (int.TryParse(routeUserId, out var targetUserId) && targetUserId == authenticatedUser)
         {
             context.Succeed(requirement);
         }
+        return Task.CompletedTask;
     }
 }
